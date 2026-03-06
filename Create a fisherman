@@ -1,0 +1,237 @@
+Import tkinter as tk
+
+Import folium
+
+Import math
+
+Import serial
+
+Import threading
+
+Import webbrowser
+
+Import os
+
+Import time
+
+# ------------------ Serial Setup ------------------
+
+Try:
+
+ Arduino = serial.Serial(‘COM4’, 9600, timeout=1)
+
+ Time.sleep(1)
+
+Except:
+
+ Arduino = None
+
+ Print(“⚠️ Could not open COM. Please check Arduino connection.”)
+
+# ------------------ Haversine Function ------------------
+
+Def haversine(lat1, lon1, lat2, lon2):
+
+ R = 6371.0 # Radius of Earth in kilometers
+
+ Lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+
+ Dlat = lat2 – lat1
+
+ Dlon = lon2 – lon1
+
+ A = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+
+ C = 2 * math.atan2(math.sqrt(a), math.sqrt(1 – a))
+
+ Return R * c
+
+# ------------------ Location Setup ------------------
+
+Main_lat = 10.815527
+
+Main_lng = 78.673339
+
+#Crossed
+
+Dynamic_lat = 10.815239
+
+Dynamic_lng = 78.677710
+
+#Normal
+
+#dynamic_lat = 10.815109
+
+#dynamic_lng = 78.672769
+
+Threshold_km = 0.1 # border threshold
+
+Alert_sent = False # Flag to prevent multiple sends
+
+# ------------------ Map Handling ------------------
+
+Def create_map():
+
+ M = folium.Map(location=[main_lat, main_lng], zoom_start=15)
+
+ Folium.Marker([main_lat, main_lng], popup=”Main Location”, 
+
+Icon=folium.Icon(color=’red’)).add_to(m)
+Folium.Marker([dynamic_lat, dynamic_lng], popup=”Boat Location”, 
+
+Icon=folium.Icon(color=’blue’)).add_to(m)
+
+ Folium.PolyLine([(main_lat, main_lng), (dynamic_lat, dynamic_lng)], color=”purple”).add_to(m)
+
+ m.save(“location_map.html”)
+
+def open_map():
+
+ path = os.path.abspath(“location_map.html”)
+
+ webbrowser.open(f’file://{path}’, new=1)
+
+# ------------------ UI Update ------------------
+
+Def update_ui(key, lat, lng, border_crossed):
+
+ Lat_lng_label.config(text=f”Latitude: {lat}\nLongitude: {lng}”)
+
+ If key == ‘1’:
+
+ Boat_label.config(text=”Boat Status: ON”, fg=”green”)
+
+ Else:
+
+ Boat_label.config(text=”Boat Status: OFF”, fg=”red”)
+
+ If border_crossed:
+
+ Border_label.config(text=”🚨 Border Crossed!”, fg=”red”)
+
+ Else:
+
+ Border_label.config(text=”✅ Within Border”, fg=”green”)
+
+# ------------------ Serial Read ------------------
+
+Def read_serial():
+
+ Global dynamic_lat, dynamic_lng, alert_sent
+
+ While True:
+
+ Try:
+
+ Line = arduino.readline().decode(‘utf-8’).strip()
+
+ If not line:
+
+ Continue
+
+ Values = line.split(‘ ‘)
+
+ If len(values) < 3:
+
+ Continue
+
+ Key, lat, lng = values[:3]
+
+ Try:
+
+ Data_lat = float(lat)
+
+ Data_lng = float(lng)
+
+ If data_lat != 0.0 and data_lng != 0.0:
+
+ Dynamic_lat = data_lat
+
+ Dynamic_lng = data_lng
+
+ Except ValueError:
+
+ Continue
+
+ # Check if border is crossed
+
+ Distance = haversine(main_lat, main_lng, dynamic_lat, dynamic_lng)
+
+ Crossed = distance > threshold_km
+# Send alert to Arduino only once
+
+ If crossed and not alert_sent and arduino:
+
+ Try:
+
+ Arduino.write(b’1’)
+
+ Alert_sent = True
+
+ Print(“🚨 Border crossed! Sent ‘1’ to Arduino.”)
+
+ Except Exception as e:
+
+ Print(“Error sending to Arduino:”, e)
+
+ # Reset alert flag if back inside border
+
+ If not crossed:
+
+ Alert_sent = False
+
+ Root.after(0, update_ui, key, dynamic_lat, dynamic_lng, crossed)
+
+ Create_map()
+
+ Except Exception as e:
+
+ Print(“Serial Read Error:”, e)
+
+Def exit_app():
+
+ If arduino:
+
+ Arduino.close()
+
+ Root.destroy()
+
+Root = tk.Tk()
+
+Root.title(“Fisherman Location Tracking System”)
+
+Root.geometry(“500x350”)
+
+# Bold, Centered Title Label
+
+Title_label = tk.Label(root, text=”Fisherman Location Tracking System”, font=(“Arial”, 16, 
+
+“bold”))
+
+Title_label.pack(pady=10)
+
+Boat_label = tk.Label(root, text=”Boat Status: --“, font=(“Arial”, 14))
+
+Boat_label.pack(pady=10)
+
+Lat_lng_label = tk.Label(root, text=”Latitude: --\nLongitude: --“, font=(“Arial”, 12))
+
+Lat_lng_label.pack(pady=10)
+
+Border_label = tk.Label(root, text=”Waiting for GPS data…”, font=(“Arial”, 14), fg=”blue”)
+
+Border_label.pack(pady=10)
+
+Tk.Button(root, text=”Open Map”, font=(“Arial”, 12), command=open_map).pack(pady=10)
+
+Tk.Button(root, text=”Exit”, font=(“Arial”, 12), fg=”white”, bg=”black”, 
+
+Command=exit_app).pack(pady=20)
+
+If arduino:
+
+ Threading.Thread(target=read_serial, daemon=True).start()
+
+Create_map()
+
+Root.mainloop()
